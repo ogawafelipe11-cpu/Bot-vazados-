@@ -1,7 +1,7 @@
 import os
-import requests
-import sqlite3
 import asyncio
+import sqlite3
+import requests
 
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import CommandStart
@@ -10,6 +10,10 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from fastapi import FastAPI, Request
 import uvicorn
 
+
+# ========================
+# VARIAVEIS AMBIENTE
+# ========================
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 INVICTUS_API_TOKEN = os.getenv("INVICTUS_API_TOKEN")
@@ -28,14 +32,22 @@ GROUP_LINK = os.getenv("GROUP_LINK")
 PRICE = int(os.getenv("PRICE_CENTS", "3790"))
 
 
+# ========================
+# BOT TELEGRAM
+# ========================
+
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
 app = FastAPI()
 
 
+# ========================
+# DATABASE
+# ========================
+
 def db():
-    return sqlite3.connect("db.sqlite3")
+    return sqlite3.connect("database.db")
 
 
 def init_db():
@@ -54,17 +66,28 @@ def init_db():
     conn.close()
 
 
+# ========================
+# GERAR PIX
+# ========================
+
 def create_pix(user_id):
 
-    url = f"https://api.invictuspay.app.br/api/public/v1/transactions?api_token={INVICTUS_API_TOKEN}&postback_url={POSTBACK_URL}"
+    url = "https://api.invictuspay.app.br/api/public/v1/transactions"
+
+    params = {
+        "api_token": INVICTUS_API_TOKEN
+    }
 
     payload = {
 
         "amount": PRICE,
         "offer_hash": OFFER_HASH,
         "payment_method": "pix",
+        "installments": 1,
+        "expire_in_days": 1,
 
         "customer": {
+
             "name": CLIENT_NAME,
             "email": CLIENT_EMAIL,
             "phone_number": CLIENT_PHONE,
@@ -76,16 +99,24 @@ def create_pix(user_id):
                 "product_hash": PRODUCT_HASH,
                 "title": "Acesso VIP",
                 "price": PRICE,
-                "quantity": 1
+                "quantity": 1,
+                "operation_type": 1,
+                "tangible": False
             }
         ]
     }
 
-    r = requests.post(url,json=payload)
+    r = requests.post(url, params=params, json=payload)
 
     data = r.json()
 
-    pix = str(data)
+    print("INVICUTS RESPONSE:", data)
+
+    if not data.get("success"):
+
+        return "❌ Erro ao gerar pagamento. Tente novamente."
+
+    pix = data.get("pix_copy_paste") or data.get("pix")
 
     txid = data.get("id")
 
@@ -102,6 +133,10 @@ def create_pix(user_id):
     return pix
 
 
+# ========================
+# BOTÕES
+# ========================
+
 def keyboard():
 
     return InlineKeyboardMarkup(
@@ -111,13 +146,17 @@ def keyboard():
     )
 
 
+# ========================
+# COMANDO START
+# ========================
+
 @dp.message(CommandStart())
 async def start(msg: types.Message):
 
     await msg.answer(
 
         "🔥 ACESSO VIP\n\n"
-        "💰 Valor R$37,90\n"
+        "💰 Valor: R$37,90\n"
         "♾️ Acesso vitalício\n\n"
         "Clique abaixo para comprar",
 
@@ -125,22 +164,30 @@ async def start(msg: types.Message):
     )
 
 
+# ========================
+# GERAR PIX
+# ========================
+
 @dp.callback_query(lambda c:c.data=="pay")
 async def pay(call: types.CallbackQuery):
 
-    pix=create_pix(call.from_user.id)
+    pix = create_pix(call.from_user.id)
 
     await call.message.answer(
 
-        "💳 Segue o Pix Copia e Cola:\n\n"
+        "💳 Segue o Pix Copia e Cola para pagamento:\n\n"
         f"`{pix}`",
 
         parse_mode="Markdown"
     )
 
 
+# ========================
+# WEBHOOK INVITCUS
+# ========================
+
 @app.post("/invictus/postback")
-async def postback(req:Request):
+async def postback(req: Request):
 
     data = await req.json()
 
@@ -173,8 +220,12 @@ async def postback(req:Request):
                 f"🔓 Aqui está seu acesso:\n{GROUP_LINK}"
             )
 
-    return {"ok":True}
+    return {"ok": True}
 
+
+# ========================
+# INICIAR BOT
+# ========================
 
 async def start_bot():
     await dp.start_polling(bot)
