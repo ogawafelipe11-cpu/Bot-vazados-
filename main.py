@@ -11,10 +11,6 @@ from fastapi import FastAPI, Request
 import uvicorn
 
 
-# =========================
-# VARIÁVEIS DE AMBIENTE
-# =========================
-
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 INVICTUS_API_TOKEN = os.getenv("INVICTUS_API_TOKEN")
 POSTBACK_URL = os.getenv("POSTBACK_URL")
@@ -32,26 +28,17 @@ GROUP_LINK = os.getenv("GROUP_LINK")
 PRICE = int(os.getenv("PRICE_CENTS", "3790"))
 
 
-# =========================
-# BOT
-# =========================
-
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
 app = FastAPI()
 
 
-# =========================
-# DATABASE
-# =========================
-
 def db():
     return sqlite3.connect("database.db")
 
 
 def init_db():
-
     conn = db()
 
     conn.execute("""
@@ -66,17 +53,13 @@ def init_db():
     conn.close()
 
 
-# =========================
-# GERAR PIX
-# =========================
+# ==============================
+# GERAR PIX INVICUTS
+# ==============================
 
 def create_pix(user_id):
 
-    url = "https://api.invictuspay.app.br/api/public/v1/transactions"
-
-    params = {
-        "api_token": INVICTUS_API_TOKEN
-    }
+    url = f"https://api.invictuspay.app.br/api/public/v1/transactions?api_token={INVICTUS_API_TOKEN}"
 
     payload = {
 
@@ -105,32 +88,21 @@ def create_pix(user_id):
         ]
     }
 
-    r = requests.post(url, params=params, json=payload)
+    r = requests.post(url, json=payload)
 
     data = r.json()
 
     print("INVICUTS RESPONSE:", data)
 
-    if not data.get("success"):
+    try:
 
-        return "❌ Erro ao gerar Pix. Tente novamente."
+        pix = data["data"]["pix"]["copy_paste"]
 
-    # pega o pix copia e cola
-    pix = None
+        txid = data["data"]["id"]
 
-    if "pix_copy_paste" in data:
-        pix = data["pix_copy_paste"]
+    except:
 
-    elif "pix" in data:
-        pix = data["pix"]
-
-    elif "data" in data and "pix_copy_paste" in data["data"]:
-        pix = data["data"]["pix_copy_paste"]
-
-    if not pix:
-        return "❌ Pix não encontrado na resposta da API."
-
-    txid = data.get("id")
+        return None
 
     conn = db()
 
@@ -145,10 +117,6 @@ def create_pix(user_id):
     return pix
 
 
-# =========================
-# BOTÃO
-# =========================
-
 def keyboard():
 
     return InlineKeyboardMarkup(
@@ -157,10 +125,6 @@ def keyboard():
         ]
     )
 
-
-# =========================
-# START
-# =========================
 
 @dp.message(CommandStart())
 async def start(msg: types.Message):
@@ -176,14 +140,18 @@ async def start(msg: types.Message):
     )
 
 
-# =========================
-# PAGAMENTO
-# =========================
-
 @dp.callback_query(lambda c:c.data=="pay")
 async def pay(call: types.CallbackQuery):
 
     pix = create_pix(call.from_user.id)
+
+    if not pix:
+
+        await call.message.answer(
+            "❌ Erro ao gerar Pix. Tente novamente."
+        )
+
+        return
 
     await call.message.answer(
 
@@ -194,14 +162,16 @@ async def pay(call: types.CallbackQuery):
     )
 
 
-# =========================
-# WEBHOOK INVITCUS
-# =========================
+# ==============================
+# POSTBACK INVICUTS
+# ==============================
 
 @app.post("/invictus/postback")
 async def postback(req: Request):
 
     data = await req.json()
+
+    print("POSTBACK:", data)
 
     status = data.get("status")
     txid = data.get("id")
@@ -229,15 +199,11 @@ async def postback(req: Request):
 
             await bot.send_message(
                 user,
-                f"🔓 Aqui está seu acesso:\n{GROUP_LINK}"
+                f"🔓 Acesso liberado:\n{GROUP_LINK}"
             )
 
     return {"ok": True}
 
-
-# =========================
-# INICIAR BOT
-# =========================
 
 async def start_bot():
     await dp.start_polling(bot)
