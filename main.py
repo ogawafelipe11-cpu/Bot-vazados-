@@ -11,9 +11,9 @@ from fastapi import FastAPI, Request
 import uvicorn
 
 
-# ========================
-# VARIAVEIS AMBIENTE
-# ========================
+# =========================
+# VARIÁVEIS DE AMBIENTE
+# =========================
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 INVICTUS_API_TOKEN = os.getenv("INVICTUS_API_TOKEN")
@@ -32,9 +32,9 @@ GROUP_LINK = os.getenv("GROUP_LINK")
 PRICE = int(os.getenv("PRICE_CENTS", "3790"))
 
 
-# ========================
-# BOT TELEGRAM
-# ========================
+# =========================
+# BOT
+# =========================
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -42,9 +42,9 @@ dp = Dispatcher()
 app = FastAPI()
 
 
-# ========================
+# =========================
 # DATABASE
-# ========================
+# =========================
 
 def db():
     return sqlite3.connect("database.db")
@@ -66,9 +66,9 @@ def init_db():
     conn.close()
 
 
-# ========================
+# =========================
 # GERAR PIX
-# ========================
+# =========================
 
 def create_pix(user_id):
 
@@ -87,7 +87,6 @@ def create_pix(user_id):
         "expire_in_days": 1,
 
         "customer": {
-
             "name": CLIENT_NAME,
             "email": CLIENT_EMAIL,
             "phone_number": CLIENT_PHONE,
@@ -114,9 +113,22 @@ def create_pix(user_id):
 
     if not data.get("success"):
 
-        return "❌ Erro ao gerar pagamento. Tente novamente."
+        return "❌ Erro ao gerar Pix. Tente novamente."
 
-    pix = data.get("pix_copy_paste") or data.get("pix")
+    # pega o pix copia e cola
+    pix = None
+
+    if "pix_copy_paste" in data:
+        pix = data["pix_copy_paste"]
+
+    elif "pix" in data:
+        pix = data["pix"]
+
+    elif "data" in data and "pix_copy_paste" in data["data"]:
+        pix = data["data"]["pix_copy_paste"]
+
+    if not pix:
+        return "❌ Pix não encontrado na resposta da API."
 
     txid = data.get("id")
 
@@ -133,9 +145,9 @@ def create_pix(user_id):
     return pix
 
 
-# ========================
-# BOTÕES
-# ========================
+# =========================
+# BOTÃO
+# =========================
 
 def keyboard():
 
@@ -146,9 +158,9 @@ def keyboard():
     )
 
 
-# ========================
-# COMANDO START
-# ========================
+# =========================
+# START
+# =========================
 
 @dp.message(CommandStart())
 async def start(msg: types.Message):
@@ -164,9 +176,9 @@ async def start(msg: types.Message):
     )
 
 
-# ========================
-# GERAR PIX
-# ========================
+# =========================
+# PAGAMENTO
+# =========================
 
 @dp.callback_query(lambda c:c.data=="pay")
 async def pay(call: types.CallbackQuery):
@@ -175,16 +187,16 @@ async def pay(call: types.CallbackQuery):
 
     await call.message.answer(
 
-        "💳 Segue o Pix Copia e Cola para pagamento:\n\n"
+        "💳 Segue o Pix Copia e Cola:\n\n"
         f"`{pix}`",
 
         parse_mode="Markdown"
     )
 
 
-# ========================
+# =========================
 # WEBHOOK INVITCUS
-# ========================
+# =========================
 
 @app.post("/invictus/postback")
 async def postback(req: Request):
@@ -223,9 +235,9 @@ async def postback(req: Request):
     return {"ok": True}
 
 
-# ========================
+# =========================
 # INICIAR BOT
-# ========================
+# =========================
 
 async def start_bot():
     await dp.start_polling(bot)
