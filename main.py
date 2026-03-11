@@ -2,7 +2,6 @@ import os
 import asyncio
 import sqlite3
 import requests
-import time
 
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import CommandStart
@@ -11,10 +10,6 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from fastapi import FastAPI, Request
 import uvicorn
 
-
-# =====================
-# VARIAVEIS
-# =====================
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 INVICTUS_API_TOKEN = os.getenv("INVICTUS_API_TOKEN")
@@ -31,24 +26,17 @@ GROUP_LINK = os.getenv("GROUP_LINK")
 
 PRICE = int(os.getenv("PRICE_CENTS", "3790"))
 
-
-bot = Bot(token=BOT_TOKEN)
+bot = Bot(BOT_TOKEN)
 dp = Dispatcher()
+
 app = FastAPI()
 
-last_pix = {}
-
-
-# =====================
-# DATABASE
-# =====================
 
 def db():
-    return sqlite3.connect("db.sqlite")
+    return sqlite3.connect("database.db")
 
 
 def init_db():
-
     conn = db()
 
     conn.execute("""
@@ -62,15 +50,44 @@ def init_db():
     conn.close()
 
 
-# =====================
-# GERAR PIX
-# =====================
+def extract_pix(data):
+    """
+    Tenta encontrar o pix em qualquer formato da resposta da API
+    """
+
+    if not data:
+        return None
+
+    if "pix_copy_paste" in data:
+        return data["pix_copy_paste"]
+
+    if "pix" in data and isinstance(data["pix"], str):
+        return data["pix"]
+
+    if "data" in data:
+
+        d = data["data"]
+
+        if "pix_copy_paste" in d:
+            return d["pix_copy_paste"]
+
+        if "pix" in d:
+
+            if isinstance(d["pix"], dict):
+                return d["pix"].get("copy_paste")
+
+            if isinstance(d["pix"], str):
+                return d["pix"]
+
+    return None
+
 
 def create_pix(user_id):
 
     url = f"https://api.invictuspay.app.br/api/public/v1/transactions?api_token={INVICTUS_API_TOKEN}"
 
     payload = {
+
         "amount": PRICE,
         "offer_hash": OFFER_HASH,
         "payment_method": "pix",
@@ -102,30 +119,15 @@ def create_pix(user_id):
 
     print("INVICUTS RESPONSE:", data)
 
-    pix = None
+    pix = extract_pix(data)
+
     txid = None
 
-    try:
+    if "data" in data and "id" in data["data"]:
+        txid = data["data"]["id"]
 
-        if "data" in data:
-
-            if "pix" in data["data"]:
-
-                pix = data["data"]["pix"].get("copy_paste")
-
-            if not pix:
-                pix = data["data"].get("pix_copy_paste")
-
-            txid = data["data"].get("id")
-
-        if not pix:
-
-            pix = data.get("pix_copy_paste") or data.get("pix")
-
-            txid = data.get("id")
-
-    except:
-        pass
+    elif "id" in data:
+        txid = data["id"]
 
     if not pix:
         return None
@@ -143,10 +145,6 @@ def create_pix(user_id):
     return pix
 
 
-# =====================
-# BOTÃO
-# =====================
-
 def keyboard():
 
     return InlineKeyboardMarkup(
@@ -155,10 +153,6 @@ def keyboard():
         ]
     )
 
-
-# =====================
-# START
-# =====================
 
 @dp.message(CommandStart())
 async def start(msg: types.Message):
@@ -174,27 +168,14 @@ async def start(msg: types.Message):
     )
 
 
-# =====================
-# PAGAMENTO
-# =====================
-
 @dp.callback_query(lambda c: c.data == "pagar")
 async def pagar(call: types.CallbackQuery):
 
     user = call.from_user.id
-    now = time.time()
 
-    if user in last_pix and now - last_pix[user] < 15:
-
-        await call.message.answer(
-            "⏳ Aguarde alguns segundos antes de gerar outro Pix."
-        )
-        return
-
-    last_pix[user] = now
-
+    # mensagem 1
     await call.message.answer(
-        "💳 Gerando seu Pix copia e cola..."
+        "💳 Segue o Pix copia e cola para acessar o VIP:"
     )
 
     pix = create_pix(user)
@@ -202,20 +183,19 @@ async def pagar(call: types.CallbackQuery):
     if not pix:
 
         await call.message.answer(
-            "❌ Não foi possível gerar o Pix. Tente novamente."
+            "❌ Erro ao gerar Pix. Tente novamente."
         )
+
         return
 
+    # mensagem 2
     await call.message.answer(pix)
 
+    # mensagem 3
     await call.message.answer(
-        "✅ Assim que o pagamento for identificado, o acesso será liberado automaticamente."
+        "✅ Quando o pagamento for confirmado, o acesso será liberado automaticamente."
     )
 
-
-# =====================
-# POSTBACK PAGAMENTO
-# =====================
 
 @app.post("/invictus/postback")
 async def postback(req: Request):
@@ -250,15 +230,11 @@ async def postback(req: Request):
 
             await bot.send_message(
                 user,
-                f"🔓 Acesso liberado:\n{GROUP_LINK}"
+                f"🔓 Aqui está seu acesso:\n{GROUP_LINK}"
             )
 
     return {"ok": True}
 
-
-# =====================
-# START BOT
-# =====================
 
 async def start_bot():
     await dp.start_polling(bot)
