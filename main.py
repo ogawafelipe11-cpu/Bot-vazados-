@@ -27,6 +27,7 @@ GROUP_LINK = os.getenv("GROUP_LINK")
 
 PRICE = int(os.getenv("PRICE_CENTS", "3790"))
 
+
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
@@ -38,6 +39,7 @@ def db():
 
 
 def init_db():
+
     conn = db()
 
     conn.execute("""
@@ -87,7 +89,7 @@ def create_pix(user_id):
 
     txid = data.get("id")
 
-    conn=db()
+    conn = db()
 
     conn.execute(
         "INSERT INTO tx(telegram_id,txid) VALUES(?,?)",
@@ -101,6 +103,7 @@ def create_pix(user_id):
 
 
 def keyboard():
+
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="💳 Comprar acesso",callback_data="pay")]
@@ -109,25 +112,29 @@ def keyboard():
 
 
 @dp.message(CommandStart())
-async def start(msg:types.Message):
+async def start(msg: types.Message):
 
     await msg.answer(
+
         "🔥 ACESSO VIP\n\n"
         "💰 Valor R$37,90\n"
         "♾️ Acesso vitalício\n\n"
         "Clique abaixo para comprar",
+
         reply_markup=keyboard()
     )
 
 
 @dp.callback_query(lambda c:c.data=="pay")
-async def pay(call:types.CallbackQuery):
+async def pay(call: types.CallbackQuery):
 
     pix=create_pix(call.from_user.id)
 
     await call.message.answer(
+
         "💳 Segue o Pix Copia e Cola:\n\n"
         f"`{pix}`",
+
         parse_mode="Markdown"
     )
 
@@ -137,24 +144,24 @@ async def postback(req:Request):
 
     data = await req.json()
 
-    status=data.get("status")
-    txid=data.get("id")
+    status = data.get("status")
+    txid = data.get("id")
 
-    if status=="paid":
+    if status == "paid":
 
-        conn=db()
-        cur=conn.cursor()
+        conn = db()
+        cur = conn.cursor()
 
         cur.execute(
             "SELECT telegram_id FROM tx WHERE txid=?",
             (txid,)
         )
 
-        row=cur.fetchone()
+        row = cur.fetchone()
 
         if row:
 
-            user=row[0]
+            user = row[0]
 
             await bot.send_message(
                 user,
@@ -173,20 +180,22 @@ async def start_bot():
     await dp.start_polling(bot)
 
 
-def run():
+async def main():
 
     init_db()
 
-    loop=asyncio.get_event_loop()
+    asyncio.create_task(start_bot())
 
-    loop.create_task(start_bot())
-
-    uvicorn.run(
+    config = uvicorn.Config(
         app,
         host="0.0.0.0",
         port=int(os.getenv("PORT",8000))
     )
 
+    server = uvicorn.Server(config)
 
-if __name__=="__main__":
-    run()
+    await server.serve()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
